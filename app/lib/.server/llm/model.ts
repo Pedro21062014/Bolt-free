@@ -1,8 +1,6 @@
 /*
  * @ts-nocheck
- * Preventing TS checks with files presented in the video for a better presentation.
  */
-import { getAPIKey, getBaseURL } from '~/lib/.server/llm/api-key';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -10,173 +8,100 @@ import { ollama } from 'ollama-ai-provider';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createMistral } from '@ai-sdk/mistral';
 import { createCohere } from '@ai-sdk/cohere';
-import type { LanguageModelV1 } from 'ai';
 
-export const DEFAULT_NUM_CTX = process.env.DEFAULT_NUM_CTX ? parseInt(process.env.DEFAULT_NUM_CTX, 10) : 32768;
+// Configuração de Contexto Padrão
+export const DEFAULT_NUM_CTX = 32768;
 
-type OptionalApiKey = string | undefined;
+// --- Funções de Inicialização de Modelos ---
 
-// ============================================================================
-// 1. PROVEDORES NATIVOS (Usando SDKs Oficiais da Vercel AI)
-// ============================================================================
+const getAnthropic = (apiKey: string, model: string) => createAnthropic({ apiKey })(model);
 
-export function getAnthropicModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'claude-3-7-sonnet-20250219', 'claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest'
-  const anthropic = createAnthropic({ apiKey });
-  return anthropic(model);
-}
+const getOpenAI = (apiKey: string, model: string, baseURL?: string) => 
+  createOpenAI({ apiKey, baseURL: baseURL || 'https://api.openai.com/v1' })(model);
 
-export function getOpenAIModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'o1', 'o3-mini', 'gpt-4o', 'gpt-4o-mini'
-  const openai = createOpenAI({ apiKey });
-  return openai(model);
-}
+const getGoogle = (apiKey: string, model: string) => 
+  createGoogleGenerativeAI({ apiKey })(model, { structuredOutputs: true });
 
-export function getGoogleModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'gemini-2.0-flash', 'gemini-2.0-flash-thinking-exp', 'gemini-1.5-pro-latest'
-  const google = createGoogleGenerativeAI({ apiKey });
-  return google(model, { structuredOutputs: true });
-}
+const getMistral = (apiKey: string, model: string) => createMistral({ apiKey })(model);
 
-export function getMistralModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'mistral-large-latest', 'pixtral-large-latest', 'mistral-small-latest'
-  const mistral = createMistral({ apiKey });
-  return mistral(model);
-}
+const getCohere = (apiKey: string, model: string) => createCohere({ apiKey })(model);
 
-export function getCohereAIModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'command-r-plus-08-2024', 'command-r-08-2024'
-  const cohere = createCohere({ apiKey });
-  return cohere(model);
-}
+const getOpenRouter = (apiKey: string, model: string) => createOpenRouter({ apiKey }).chat(model);
 
-// ============================================================================
-// 2. PROVEDORES COMPATÍVEIS COM OPENAI (Custom baseURLs)
-// ============================================================================
+const getOllama = (model: string, baseURL: string = 'http://localhost:11434') => 
+  ollama(model, { config: { baseURL: `${baseURL}/api` }, numCtx: DEFAULT_NUM_CTX });
 
-export function getDeepseekModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'deepseek-chat' (V3), 'deepseek-reasoner' (R1)
-  const deepseek = createOpenAI({
-    baseURL: 'https://api.deepseek.com',
-    apiKey,
-  });
-  return deepseek(model);
-}
+// --- Seletor de Modelo Baseado na Chave e Provedor ---
 
-export function getXAIModel(apiKey: OptionalApiKey, model: string) {
-  // Modelos de referência: 'grok-3', 'grok-3-thinking', 'grok-2-latest'
-  const xai = createOpenAI({
-    baseURL: 'https://api.x.ai/v1',
-    apiKey,
-  });
-  return xai(model);
-}
+/**
+ * @param provider Nome do provedor (ex: 'OpenAI', 'Anthropic', 'Google')
+ * @param model ID do modelo (ex: 'gpt-4o', 'claude-3-7-sonnet', 'gemini-2.0-flash')
+ * @param apiKey A chave API direta
+ * @param baseURL URL opcional para provedores locais ou compatíveis
+ */
+export function getModel(provider: string, model: string, apiKey: string, baseURL?: string) {
+  
+  // Normalização para evitar erros de case
+  const p = provider.toLowerCase();
 
-export function getGroqModel(apiKey: OptionalApiKey, model: string) {
-  // Focado em velocidade: Llama 3.3 70B, Mixtral 8x7B, etc.
-  const groq = createOpenAI({
-    baseURL: 'https://api.groq.com/openai/v1',
-    apiKey,
-  });
-  return groq(model);
-}
+  switch (p) {
+    case 'anthropic':
+      return getAnthropic(apiKey, model);
+    
+    case 'openai':
+      return getOpenAI(apiKey, model);
 
-export function getTogetherAIModel(apiKey: OptionalApiKey, model: string) {
-  // Agregador robusto para Open Source: Llama 3.1 405B, Qwen 2.5 72B
-  const together = createOpenAI({
-    baseURL: 'https://api.together.xyz/v1',
-    apiKey,
-  });
-  return together(model);
-}
+    case 'google':
+      return getGoogle(apiKey, model);
 
-export function getPerplexityModel(apiKey: OptionalApiKey, model: string) {
-  // Focado em Search/Reasoning: 'sonar-reasoning-pro', 'sonar-pro'
-  const perplexity = createOpenAI({
-    baseURL: 'https://api.perplexity.ai',
-    apiKey,
-  });
-  return perplexity(model);
-}
+    case 'deepseek':
+      // DeepSeek V3 e R1
+      return getOpenAI(apiKey, model, 'https://api.deepseek.com');
 
-export function getHuggingFaceModel(apiKey: OptionalApiKey, model: string) {
-  const hf = createOpenAI({
-    baseURL: 'https://api-inference.huggingface.co/v1/',
-    apiKey,
-  });
-  return hf(model);
-}
+    case 'xai':
+      // Grok 3 e Grok 2
+      return getOpenAI(apiKey, model, 'https://api.x.ai/v1');
 
-export function getOpenAILikeModel(baseURL: string, apiKey: OptionalApiKey, model: string) {
-  // Para servidores genéricos compatíveis com API da OpenAI
-  const custom = createOpenAI({ baseURL, apiKey });
-  return custom(model);
-}
+    case 'groq':
+      return getOpenAI(apiKey, model, 'https://api.groq.com/openai/v1');
 
-// ============================================================================
-// 3. LOCAIS E AGREGADORES EXTERNOS
-// ============================================================================
+    case 'together':
+      return getOpenAI(apiKey, model, 'https://api.together.xyz/v1');
 
-export function getOpenRouterModel(apiKey: OptionalApiKey, model: string) {
-  // Acesso universal a virtualmente qualquer modelo comercial ou open-source
-  const openRouter = createOpenRouter({ apiKey });
-  return openRouter.chat(model);
-}
+    case 'perplexity':
+      return getOpenAI(apiKey, model, 'https://api.perplexity.ai');
 
-export function getLMStudioModel(baseURL: string, model: string) {
-  const lmstudio = createOpenAI({
-    baseURL: `${baseURL}/v1`,
-    apiKey: 'not-needed',
-  });
-  return lmstudio(model);
-}
+    case 'mistral':
+      return getMistral(apiKey, model);
 
-export function getOllamaModel(baseURL: string, model: string) {
-  // Adaptado para a interface moderna do provider oficial Ollama
-  return ollama(model, {
-    config: { baseURL: `${baseURL}/api` },
-    numCtx: DEFAULT_NUM_CTX,
-  });
-}
+    case 'cohere':
+      return getCohere(apiKey, model);
 
-// ============================================================================
-// SELETOR PRINCIPAL (Entrypoint)
-// ============================================================================
+    case 'openrouter':
+      return getOpenRouter(apiKey, model);
 
-export function getModel(provider: string, model: string, env: Env, apiKeys?: Record<string, string>) {
-  const apiKey = getAPIKey(env, provider, apiKeys);
-  const baseURL = getBaseURL(env, provider);
+    case 'lmstudio':
+      return getOpenAI('not-needed', model, `${baseURL || 'http://localhost:1234'}/v1`);
 
-  switch (provider) {
-    case 'Anthropic':
-      return getAnthropicModel(apiKey, model);
-    case 'OpenAI':
-      return getOpenAIModel(apiKey, model);
-    case 'Google':
-      return getGoogleModel(apiKey, model);
-    case 'Deepseek':
-      return getDeepseekModel(apiKey, model);
-    case 'xAI':
-      return getXAIModel(apiKey, model);
-    case 'Groq':
-      return getGroqModel(apiKey, model);
-    case 'Together':
-      return getTogetherAIModel(apiKey, model);
-    case 'Perplexity':
-      return getPerplexityModel(apiKey, model);
-    case 'Mistral':
-      return getMistralModel(apiKey, model);
-    case 'Cohere':
-      return getCohereAIModel(apiKey, model);
-    case 'HuggingFace':
-      return getHuggingFaceModel(apiKey, model);
-    case 'OpenRouter':
-      return getOpenRouterModel(apiKey, model);
-    case 'LMStudio':
-      return getLMStudioModel(baseURL, model);
-    case 'OpenAILike':
-      return getOpenAILikeModel(baseURL, apiKey, model);
+    case 'ollama':
+      return getOllama(model, baseURL);
+
+    case 'openailike':
+      return getOpenAI(apiKey, model, baseURL);
+
     default:
-      return getOllamaModel(baseURL, model);
+      // Fallback para OpenAI se o provedor for desconhecido mas houver uma chave
+      return getOpenAI(apiKey, model, baseURL);
   }
 }
+
+/**
+ * LISTA DE MODELOS RECENTES (Referência para uso):
+ * * OpenAI: 'o1', 'o3-mini', 'gpt-4o', 'gpt-4o-mini'
+ * Anthropic: 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-latest', 'claude-3-5-haiku-20241022'
+ * Google: 'gemini-2.0-flash-exp', 'gemini-2.0-flash-thinking-exp', 'gemini-1.5-pro'
+ * DeepSeek: 'deepseek-chat' (V3), 'deepseek-reasoner' (R1)
+ * xAI: 'grok-3', 'grok-2-1212'
+ * Perplexity: 'sonar-reasoning-pro', 'sonar-pro'
+ * Meta (via Groq/Together): 'llama-3.3-70b-versatile', 'llama-3.1-405b'
+ */
